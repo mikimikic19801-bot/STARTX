@@ -7,13 +7,12 @@
   <link rel="manifest" href="manifest.json" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
-  
   <style>
     body { font-family: system-ui, sans-serif; }
     .card { transition: all 0.3s ease; }
     .card:hover { transform: translateY(-4px); }
     .tab-active { border-bottom: 3px solid #22c55e; color: #22c55e; font-weight: 600; }
-    .streak-hot { background: linear-gradient(90deg, #22c55e, #eab308); color: black; font-weight: bold; }
+    .streak { background: linear-gradient(90deg, #ca8a04, #eab308); color: black; }
   </style>
 </head>
 <body class="bg-slate-950 text-white min-h-screen pb-20">
@@ -24,13 +23,12 @@
         <div class="text-4xl">⚽</div>
         <div>
           <h1 class="text-3xl font-bold">Fudbalske Streaks</h1>
-          <p class="text-slate-400 text-sm">API-Football • Nizovi i statistika</p>
+          <p class="text-slate-400 text-sm">API-Football • Nizovi</p>
         </div>
       </div>
     </div>
 
-    <!-- Tabovi -->
-    <div class="flex bg-slate-900 border-b border-slate-700 text-sm">
+    <div class="flex bg-slate-900 border-b border-slate-700">
       <button onclick="showTab(0)" class="tab tab-active flex-1 py-4" id="tab0">Danas</button>
       <button onclick="showTab(1)" class="tab flex-1 py-4" id="tab1">🔥 Streaks</button>
       <button onclick="showTab(2)" class="tab flex-1 py-4" id="tab2">H2H</button>
@@ -60,10 +58,10 @@
       if (n===2) loadH2H();
     }
 
-    // ==================== DANAS ====================
+    // DANAS
     async function loadToday() {
       const content = document.getElementById('content');
-      content.innerHTML = `<div class="text-center py-12"><i class="fas fa-spinner fa-spin text-4xl"></i></div>`;
+      content.innerHTML = `<p class="text-center py-10">Učitavanje...</p>`;
 
       const today = new Date().toISOString().split('T')[0];
       const matches = await apiGet(`/fixtures?date=${today}`);
@@ -78,124 +76,99 @@
           <div class="card bg-slate-900 rounded-2xl p-5 mb-4">
             <div class="flex justify-between items-center">
               <div class="flex-1 flex items-center gap-3">
-                <img src="${h.logo}" class="w-8 h-8" onerror="this.style.display='none'">
-                <span>${h.name}</span>
+                <img src="${h.logo}" class="w-9 h-9 rounded-full" onerror="this.src='https://via.placeholder.com/36?text=⚽'">
+                <span class="font-medium">${h.name}</span>
               </div>
-              <div class="text-center font-bold text-2xl">${g.home ?? '-'}:${g.away ?? '-'}</div>
+              <div class="text-center">
+                <div class="text-3xl font-bold">${g.home ?? '-'} : ${g.away ?? '-'}</div>
+                <div class="text-xs text-slate-500">${m.fixture.status.long}</div>
+              </div>
               <div class="flex-1 flex items-center gap-3 justify-end">
-                <span>${a.name}</span>
-                <img src="${a.logo}" class="w-8 h-8" onerror="this.style.display='none'">
+                <span class="font-medium">${a.name}</span>
+                <img src="${a.logo}" class="w-9 h-9 rounded-full" onerror="this.src='https://via.placeholder.com/36?text=⚽'">
               </div>
             </div>
-            <div class="text-center text-xs text-slate-500 mt-2">${m.league.name} • ${m.fixture.status.long}</div>
+            <div class="text-center text-xs text-slate-400 mt-3">${m.league.name}</div>
           </div>`;
       });
-      content.innerHTML = html || `<p class="text-center py-10">Nema utakmica danas.</p>`;
+
+      content.innerHTML = html || `<p class="text-center py-10 text-slate-400">Nema utakmica danas.</p>`;
     }
 
-    // ==================== STREKS (NIZOVI) ====================
+    // STREAKS - poboljšano
     async function loadStreaks() {
       const content = document.getElementById('content');
-      content.innerHTML = `<div class="text-center py-12"><i class="fas fa-spinner fa-spin text-4xl"></i><p class="mt-4">Tražim nizove...</p></div>`;
+      content.innerHTML = `<p class="text-center py-12">Tražim nizove preko više liga...</p>`;
 
-      const leagues = [39,140,135,78,61,88,40,41]; // Najjače lige
-      let html = `<h2 class="text-xl font-bold mb-4">🔥 Najduži nizovi (Over 2.5 i BTTS)</h2>`;
+      // Više liga + trenutna sezona
+      const leagues = [39,140,135,78,61,88,40,41,42,43,44,45]; 
+      let html = `<h2 class="text-xl font-bold mb-4">🔥 Timovi sa nizovima Over 2.5</h2>`;
 
       for (let league of leagues) {
-        const fixtures = await apiGet(`/fixtures?league=${league}&season=2025&last=15`);
+        const data = await apiGet(`/fixtures?league=${league}&season=2025&last=12`);
         
-        const teamStats = {};
+        const stats = {};
+        data.forEach(f => {
+          const home = f.teams.home.name;
+          const away = f.teams.away.name;
+          const total = (f.goals.home||0) + (f.goals.away||0);
 
-        fixtures.forEach(f => {
-          const homeName = f.teams.home.name;
-          const awayName = f.teams.away.name;
-          const totalGoals = (f.goals.home || 0) + (f.goals.away || 0);
-          const btts = (f.goals.home > 0 && f.goals.away > 0);
-
-          [homeName, awayName].forEach(team => {
-            if (!teamStats[team]) teamStats[team] = { overStreak: 0, bttsStreak: 0, maxOver: 0, maxBtts: 0, lastOver: false, lastBtts: false };
-
-            const isOver = totalGoals >= 3;
-            const isBtts = btts;
-
-            // Over 2.5 streak
-            if (isOver) {
-              teamStats[team].overStreak++;
-              teamStats[team].maxOver = Math.max(teamStats[team].maxOver, teamStats[team].overStreak);
+          [home, away].forEach(team => {
+            if (!stats[team]) stats[team] = {streak:0, max:0};
+            if (total >= 3) {
+              stats[team].streak++;
+              stats[team].max = Math.max(stats[team].max, stats[team].streak);
             } else {
-              teamStats[team].overStreak = 0;
-            }
-
-            // BTTS streak
-            if (isBtts) {
-              teamStats[team].bttsStreak++;
-              teamStats[team].maxBtts = Math.max(teamStats[team].maxBtts, teamStats[team].bttsStreak);
-            } else {
-              teamStats[team].bttsStreak = 0;
+              stats[team].streak = 0;
             }
           });
         });
 
-        // Prikaz timova sa nizom 3+
-        Object.entries(teamStats)
-          .filter(([_, s]) => s.maxOver >= 3 || s.maxBtts >= 3)
-          .sort((a,b) => b[1].maxOver - a[1].maxOver)
+        Object.entries(stats)
+          .filter(([_,s]) => s.max >= 3)
+          .sort((a,b) => b[1].max - a[1].max)
           .forEach(([team, s]) => {
-            if (s.maxOver >= 3) {
-              html += `
-                <div class="card bg-slate-900 rounded-2xl p-5 mb-3 streak-hot">
-                  <div class="flex justify-between">
-                    <span class="font-bold">${team}</span>
-                    <span class="text-orange-400">${s.maxOver} utakmica zaredom OVER 2.5 🔥</span>
-                  </div>
-                </div>`;
-            }
+            html += `
+              <div class="card streak rounded-2xl p-5 mb-3">
+                <div class="font-bold text-lg">${team}</div>
+                <div class="text-xl">${s.max} utakmica zaredom OVER 2.5 🔥</div>
+              </div>`;
           });
       }
 
-      content.innerHTML = html || `<p class="text-center py-10 text-slate-400">Trenutno nema jakih nizova.</p>`;
+      content.innerHTML = html || `<p class="text-center py-10 text-slate-400">Trenutno nema jakih nizova (free plan ograničenje).</p>`;
     }
 
-    // ==================== H2H ====================
     async function loadH2H() {
       const content = document.getElementById('content');
       content.innerHTML = `
-        <h2 class="text-xl font-bold mb-4">H2H - Međusobni dueli</h2>
-        <div class="bg-slate-900 rounded-2xl p-6">
-          <input id="team1" type="text" placeholder="Prvi tim" class="w-full bg-slate-800 p-4 rounded-xl mb-3 outline-none text-white">
-          <input id="team2" type="text" placeholder="Drugi tim" class="w-full bg-slate-800 p-4 rounded-xl mb-4 outline-none text-white">
-          <button onclick="searchH2H()" class="w-full bg-green-600 py-4 rounded-xl font-bold text-lg">TRAŽI H2H</button>
+        <h2 class="text-xl font-bold mb-4">H2H Međusobni dueli</h2>
+        <div class="bg-slate-900 rounded-2xl p-6 space-y-4">
+          <input id="t1" placeholder="Prvi tim" value="Crvena Zvezda" class="w-full bg-slate-800 p-4 rounded-xl">
+          <input id="t2" placeholder="Drugi tim" value="Partizan" class="w-full bg-slate-800 p-4 rounded-xl">
+          <button onclick="searchH2H()" class="w-full bg-green-600 py-4 rounded-xl font-bold">TRAŽI H2H</button>
         </div>
-        <div id="h2h-result" class="mt-6"></div>
+        <div id="h2hres" class="mt-6"></div>
       `;
     }
 
     async function searchH2H() {
-      const t1 = document.getElementById('team1').value.trim();
-      const t2 = document.getElementById('team2').value.trim();
-      const result = document.getElementById('h2h-result');
-      
-      if (!t1 || !t2) return result.innerHTML = `<p class="text-red-400">Unesi oba tima!</p>`;
+      const t1 = document.getElementById('t1').value;
+      const t2 = document.getElementById('t2').value;
+      const res = document.getElementById('h2hres');
+      res.innerHTML = `<p>Pretražujem...</p>`;
 
-      result.innerHTML = `<p class="text-center py-8">Pretražujem...</p>`;
-
-      const data = await apiGet(`/fixtures/headtohead?h2h=${encodeURIComponent(t1)}-${encodeURIComponent(t2)}`);
-      
-      let html = `<h3 class="font-bold mb-3">${t1} vs ${t2} (${data.length} mečeva)</h3>`;
-      data.slice(0,10).forEach(m => {
-        html += `
-          <div class="card bg-slate-900 p-4 rounded-2xl mb-3 text-sm">
-            <div class="text-slate-400">${m.fixture.date.split('T')[0]} • ${m.league.name}</div>
-            <div class="flex justify-between mt-1">
-              <span>${m.teams.home.name} <b>${m.goals.home}</b></span>
-              <span><b>${m.goals.away}</b> ${m.teams.away.name}</span>
-            </div>
-          </div>`;
+      const data = await apiGet(`/fixtures/headtohead?h2h=${t1}-${t2}`);
+      let html = `<h3 class="mb-3">${t1} vs ${t2}</h3>`;
+      data.slice(0,8).forEach(m => {
+        html += `<div class="bg-slate-900 p-4 rounded-2xl mb-3">
+          <small>${m.league.name}</small><br>
+          ${m.teams.home.name} ${m.goals.home} - ${m.goals.away} ${m.teams.away.name}
+        </div>`;
       });
-      result.innerHTML = html;
+      res.innerHTML = html;
     }
 
-    // Start
     window.onload = () => showTab(0);
   </script>
 </body>
