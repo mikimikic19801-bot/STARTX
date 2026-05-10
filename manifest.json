@@ -1,0 +1,18 @@
+{
+  "short_name": "StatX",
+  "name": "StatX Premium Stat Skener",
+  "description": "Profesionalni skener statistike, 1X2 formi, kornera, kartona i prelaza.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/5312/5312385.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait"
+}
