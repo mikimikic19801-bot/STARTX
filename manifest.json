@@ -1,18 +1,13 @@
 {
-  "short_name": "StatX",
-  "name": "StatX Premium Stat Skener",
-  "description": "Profesionalni skener statistike, 1X2 formi, kornera, kartona i prelaza.",
-  "icons": [
-    {
-      "src": "https://cdn-icons-png.flaticon.com/512/5312/5312385.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any maskable"
-    }
-  ],
-  "start_url": "./index.html",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "name": "Fudbalske Streaks",
+  "short_name": "Streaks",
+  "description": "Fudbalske statistike i analiza",
+  "start_url": "index.html",
   "display": "standalone",
-  "orientation": "portrait"
+  "background_color": "#0f172a",
+  "theme_color": "#22c55e",
+  "icons": [
+    { "src": "https://via.placeholder.com/192/22c55e/ffffff?text=⚽", "sizes": "192x192", "type": "image/png" },
+    { "src": "https://via.placeholder.com/512/22c55e/ffffff?text=⚽", "sizes": "512x512", "type": "image/png" }
+  ]
 }
