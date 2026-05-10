@@ -1,8 +1,8 @@
-const CACHE_NAME = 'statx-v3';
+const CACHE_NAME = 'statx-v4';
 const ASSETS = [
+  './',
   './index.html',
-  './manifest.json',
-  'https://cdn.tailwindcss.com'
+  './manifest.json'
 ];
 
 self.addEventListener('install', (e) => {
@@ -28,15 +28,27 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        const resClone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, resClone);
+  // Keširamo samo lokalne zahteve da izbegnemo CORS probleme sa spoljnim API-jima i CDN-ovima
+  if (e.request.url.startsWith(self.location.origin)) {
+    e.respondWith(
+      caches.match(e.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(e.request).then((response) => {
+          if (!response || response.status !== 200 || response.type !== 'basic') {
+            return response;
+          }
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(e.request, responseToCache);
+          });
+          return response;
         });
-        return res;
       })
-      .catch(() => caches.match(e.request))
-  );
+    );
+  } else {
+    // Spoljne zahteve (API i Tailwind) uvek vuci direktno sa mreže
+    e.respondWith(fetch(e.request));
+  }
 });
