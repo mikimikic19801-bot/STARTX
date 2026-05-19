@@ -1,175 +1,848 @@
 <!DOCTYPE html>
 <html lang="sr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fudbalske Streaks</title>
-  <link rel="manifest" href="manifest.json" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>H2h football tradition analyzer</title>
+  
+  <!-- PWA meta tags za mobilne uređaje -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="H2H Analitika">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/flat-round/512/football-shot.png">
+  
+  <!-- Web Manifest inline za instalaciju ikonice na telefonu -->
+  <link rel="manifest" id="pwa-manifest">
+
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
+  
+  <!-- React and ReactDOM CDNs -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel CDN -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
   <style>
-    body { font-family: system-ui, sans-serif; }
-    .card { transition: all 0.3s ease; }
-    .card:hover { transform: translateY(-4px); }
-    .tab-active { border-bottom: 3px solid #22c55e; color: #22c55e; font-weight: 600; }
-    .streak { background: linear-gradient(90deg, #ca8a04, #eab308); color: black; }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #10b981;
+    }
   </style>
 </head>
-<body class="bg-slate-950 text-white min-h-screen pb-20">
+<body class="bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950">
 
-  <div class="max-w-4xl mx-auto">
-    <div class="bg-slate-900 p-5 border-b border-slate-700 sticky top-0 z-50">
-      <div class="flex items-center gap-3">
-        <div class="text-4xl">⚽</div>
-        <div>
-          <h1 class="text-3xl font-bold">Fudbalske Streaks</h1>
-          <p class="text-slate-400 text-sm">API-Football • Nizovi</p>
-        </div>
-      </div>
-    </div>
+  <div id="root"></div>
 
-    <div class="flex bg-slate-900 border-b border-slate-700">
-      <button onclick="showTab(0)" class="tab tab-active flex-1 py-4" id="tab0">Danas</button>
-      <button onclick="showTab(1)" class="tab flex-1 py-4" id="tab1">🔥 Streaks</button>
-      <button onclick="showTab(2)" class="tab flex-1 py-4" id="tab2">H2H</button>
-    </div>
-
-    <div class="p-4" id="content"></div>
-  </div>
-
+  <!-- Dinamičko generisanje manifesta za instalaciju na telefonu (PWA) -->
   <script>
-    const API_KEY = "f1cce1e4be71307c45a7a206e4a16495";
-    const BASE_URL = "https://v3.football.api-sports.io";
+    const manifest = {
+      "short_name": "H2H Analitika",
+      "name": "H2H Football Tradition Analyzer",
+      "icons": [
+        {
+          "src": "https://img.icons8.com/flat-round/192/football-shot.png",
+          "type": "image/png",
+          "sizes": "192x192"
+        },
+        {
+          "src": "https://img.icons8.com/flat-round/512/football-shot.png",
+          "type": "image/png",
+          "sizes": "512x512"
+        }
+      ],
+      "start_url": ".",
+      "background_color": "#020617",
+      "theme_color": "#020617",
+      "display": "standalone",
+      "orientation": "portrait"
+    };
+    const stringManifest = JSON.stringify(manifest);
+    const blob = new Blob([stringManifest], {type: 'application/json'});
+    const manifestURL = URL.createObjectURL(blob);
+    document.querySelector('#pwa-manifest').setAttribute('href', manifestURL);
 
-    async function apiGet(endpoint) {
-      try {
-        const res = await fetch(`${BASE_URL}${endpoint}`, {
-          headers: { 'x-apisports-key': API_KEY }
+    // Registracija jednostavnog Service Workera za keširanje i offline ikonicu
+    if ('serviceWorker' in navigator) {
+      const swCode = `
+        self.addEventListener('install', (e) => {
+          self.skipWaiting();
         });
-        const json = await res.json();
-        return json.response || [];
-      } catch (e) { return []; }
+        self.addEventListener('fetch', (e) => {
+          e.respondWith(fetch(e.request).catch(() => e.default()));
+        });
+      `;
+      const swBlob = new Blob([swCode], {type: 'application/javascript'});
+      const swUrl = URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl).catch(err => console.log('SW registration failed:', err));
+    }
+  </script>
+
+  <!-- React JSX Code -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const SYSTEM_INSTRUCTION = `
+    You are a world-class football statistician and sports analyst. 
+    Your task is to search Google to find accurate, real-time Head-to-Head (H2H) statistics and recent match data for the two football teams specified by the user.
+    You MUST provide a structured JSON response about their head-to-head match history, recent form, specific "traditions" (betting streaks/trends like GG, Over 2.5, Under 2.5, 1X, first half draws, etc.), and a detailed AI analysis.
+
+    IMPORTANT INSTRUCTION:
+    In the traditions/streaks section, you MUST actively look for and include:
+    1. HT Draws (Poluvreme nerešeno, 'X poluvreme', 'X-I' / 'X-II' trends) and calculate probabilities.
+    2. Half Time / Full Time Transitions (Prelazi, e.g., '1-1', '2-2', 'X-1', 'X-2' or 'Preokreti / Turnarounds').
+    
+    Ensure you search specifically for how often their matches are draw at halftime or result in HT/FT transitions.
+
+    Your response must be a strict JSON object matching this schema. Do not output any conversational text or explanations outside of the JSON block:
+    {
+      "teamA": "Full name of Team A",
+      "teamB": "Full name of Team B",
+      "overallH2H": {
+        "teamAWins": number,
+        "teamBWins": number,
+        "draws": number,
+        "totalMatches": number
+      },
+      "recentMatches": [
+        {
+          "date": "YYYY-MM-DD or readable date",
+          "homeTeam": "Home Team Name",
+          "awayTeam": "Away Team Name",
+          "homeScore": number,
+          "awayScore": number,
+          "halfTimeScore": "e.g., 0-0 or 1-1",
+          "competition": "e.g., Premier League, Champions League, Superliga"
+        }
+      ],
+      "traditions": [
+        {
+          "title": "Short code/trend (e.g., 'GG', '3+', 'X pp', '1-1', 'X-1')",
+          "description": "Explanation in selected language (e.g., 'U 5 od poslednjih 6 susreta bilo je nerešeno na poluvremenu.')",
+          "probability": number,
+          "type": "goals" | "outcome" | "streak" | "halftime" | "transition"
+        }
+      ],
+      "halftimeStats": {
+        "drawPercentage": number,
+        "teamALeadPercentage": number,
+        "teamBLeadPercentage": number,
+        "avgGoalsFirstHalf": number
+      },
+      "transitionsStats": {
+        "mostCommonTransition": "e.g., X-1 or 1-1",
+        "transitionPercentage": number,
+        "turnaroundChance": number
+      },
+      "teamAForm": [
+        { "opponent": "Opponent Name", "result": "W" | "D" | "L", "score": "e.g., 2-1", "homeAway": "Home" | "Away" }
+      ],
+      "teamBForm": [
+        { "opponent": "Opponent Name", "result": "W" | "D" | "L", "score": "e.g., 1-1", "homeAway": "Home" | "Away" }
+      ],
+      "aiAnalysis": "Deep markdown-formatted summary of the matchup, key missing players, weather or stadium factors, style of play, and tactical summary.",
+      "predictedOutcome": {
+        "homeWinProb": number,
+        "drawProb": number,
+        "awayWinProb": number,
+        "predictedHT": "e.g., X or 1",
+        "predictedFTTransition": "e.g., X-1 or 1-1",
+        "reasoning": "Short betting recommendation/reasoning"
+      }
     }
 
-    function showTab(n) {
-      document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('tab-active', i===n));
-      if (n===0) loadToday();
-      if (n===1) loadStreaks();
-      if (n===2) loadH2H();
-    }
+    Respond ONLY with this raw JSON structure. Translate descriptions, analysis and reasoning to the requested language.
+    `;
 
-    // DANAS
-    async function loadToday() {
-      const content = document.getElementById('content');
-      content.innerHTML = `<p class="text-center py-10">Učitavanje...</p>`;
+    const POPULAR_MATCHES = [
+      { teamA: "Real Madrid", teamB: "Barcelona", label: "El Clásico 🇪🇸" },
+      { teamA: "Manchester City", teamB: "Arsenal", label: "Premier League Derby 🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+      { teamA: "Crvena Zvezda", teamB: "Partizan", label: "Večiti Derbi 🇷🇸" },
+      { teamA: "Liverpool", teamB: "Chelsea", label: "English Giant Clash 🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+      { teamA: "Bayern Munich", teamB: "Borussia Dortmund", label: "Der Klassiker 🇩🇪" },
+      { teamA: "Inter Milan", teamB: "AC Milan", label: "Derby della Madonnina 🇮🇹" }
+    ];
 
-      const today = new Date().toISOString().split('T')[0];
-      const matches = await apiGet(`/fixtures?date=${today}`);
+    function H2HAnalyzer() {
+      const [teamA, setTeamA] = useState("Crvena Zvezda");
+      const [teamB, setTeamB] = useState("Partizan");
+      const [language, setLanguage] = useState("SRB"); 
+      const [loading, setLoading] = useState(false);
+      const [loadingStep, setLoadingStep] = useState(0);
+      const [error, setError] = useState(null);
+      const [h2hData, setH2hData] = useState(null);
+      const [sources, setSources] = useState([]);
+      const [deferredPrompt, setDeferredPrompt] = useState(null);
+      const [showInstallBtn, setShowInstallBtn] = useState(false);
+      
+      const [inputApiKey, setInputApiKey] = useState(() => {
+        return localStorage.getItem("h2h_gemini_api_key") || "";
+      });
+      
+      const [activeApiKey, setActiveApiKey] = useState(() => {
+        return localStorage.getItem("h2h_gemini_api_key") || "";
+      });
 
-      let html = `<h2 class="text-xl font-bold mb-4">Utakmice danas (${matches.length})</h2>`;
+      const [saveStatus, setSaveStatus] = useState("");
+      const [showApiSettings, setShowApiSettings] = useState(!activeApiKey); 
 
-      matches.forEach(m => {
-        const h = m.teams.home;
-        const a = m.teams.away;
-        const g = m.goals || {};
-        html += `
-          <div class="card bg-slate-900 rounded-2xl p-5 mb-4">
-            <div class="flex justify-between items-center">
-              <div class="flex-1 flex items-center gap-3">
-                <img src="${h.logo}" class="w-9 h-9 rounded-full" onerror="this.src='https://via.placeholder.com/36?text=⚽'">
-                <span class="font-medium">${h.name}</span>
+      useEffect(() => {
+        let interval;
+        if (loading) {
+          interval = setInterval(() => {
+            setLoadingStep((prev) => (prev + 1) % 4);
+          }, 3500);
+        } else {
+          setLoadingStep(0);
+        }
+        return () => clearInterval(interval);
+      }, [loading]);
+
+      // Osluškivanje pretraživača za instalaciju ikonice na mobilnom
+      useEffect(() => {
+        window.addEventListener('beforeinstallprompt', (e) => {
+          e.preventDefault();
+          setDeferredPrompt(e);
+          setShowInstallBtn(true);
+        });
+
+        window.addEventListener('appinstalled', () => {
+          setShowInstallBtn(false);
+          setDeferredPrompt(null);
+        });
+      }, []);
+
+      const handleInstallApp = async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setShowInstallBtn(false);
+        }
+        setDeferredPrompt(null);
+      };
+
+      const handleSaveKey = () => {
+        const trimmed = inputApiKey.trim();
+        localStorage.setItem("h2h_gemini_api_key", trimmed);
+        setActiveApiKey(trimmed);
+        setSaveStatus(language === "SRB" ? "Ključ je uspešno sačuvan! ✔️" : "Key successfully saved! ✔️");
+        
+        setTimeout(() => {
+          setSaveStatus("");
+          if (trimmed) {
+            setShowApiSettings(false);
+          }
+        }, 2000);
+      };
+
+      const handleRemoveKey = () => {
+        localStorage.removeItem("h2h_gemini_api_key");
+        setInputApiKey("");
+        setActiveApiKey("");
+        setSaveStatus(language === "SRB" ? "Ključ je uklonjen!" : "Key removed!");
+        setTimeout(() => setSaveStatus(""), 2000);
+      };
+
+      const loadingMessages = {
+        SRB: [
+          "Pokrećem pretragu i sakupljam podatke sa sportskih portala...",
+          "Analiziram poluvremena, prenose, prelaze i nerešene rezultate...",
+          "Računam statističke verovatnoće za golove i prelaze (HT/FT)...",
+          "Formulišem AI predikciju i sastavljam konačan taktički izveštaj..."
+        ],
+        ENG: [
+          "Initiating search and gathering data from sports databases...",
+          "Analyzing halftime stats, draws and HT/FT transitions...",
+          "Calculating statistical probabilities for goals and HT/FT predictions...",
+          "Formulating AI prediction and assembling tactical dashboard..."
+        ]
+      };
+
+      const fetchH2HAnalysis = async (tA = teamA, tB = teamB) => {
+        if (!tA.trim() || !tB.trim()) {
+          setError(language === "SRB" ? "Molimo unesite oba tima." : "Please enter both teams.");
+          return;
+        }
+
+        if (!activeApiKey) {
+          setError(
+            language === "SRB" 
+              ? "Molimo unesite i sačuvajte vaš besplatni Gemini API ključ u podešavanjima na vrhu stranice kako biste pokrenuli pretragu." 
+              : "Please enter and save your free Gemini API key in the settings panel at the top of the page to search."
+          );
+          setShowApiSettings(true);
+          return;
+        }
+
+        setLoading(true);
+        setError(null);
+        setH2hData(null);
+        setSources([]);
+
+        const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+          try {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+              const errBody = await response.json().catch(() => ({}));
+              const errMsg = errBody.error?.message || `HTTP error! status: ${response.status}`;
+              
+              if (response.status === 429 && retries > 0) {
+                await new Promise(res => setTimeout(res, delay));
+                return fetchWithRetry(url, options, retries - 1, delay * 2);
+              }
+              throw new Error(errMsg);
+            }
+            return response;
+          } catch (err) {
+            if (retries > 0) {
+              await new Promise(res => setTimeout(res, delay));
+              return fetchWithRetry(url, options, retries - 1, delay * 2);
+            }
+            throw err;
+          }
+        };
+
+        const langInstructions = language === "SRB" 
+          ? "Molim te uradi analizu na srpskom jeziku. Prevedi opise tradicija i AI analizu na srpski." 
+          : "Please perform the analysis in English.";
+        
+        const userQuery = `Search for H2H soccer/football statistics, halftime draws (HT X), and halftime/fulltime (HT/FT) transitions between team "${tA}" and team "${tB}". ${langInstructions}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeApiKey}`;
+
+        const payload = {
+          contents: [{ parts: [{ text: userQuery }] }],
+          tools: [{ "google_search": {} }],
+          systemInstruction: {
+            parts: [{ text: SYSTEM_INSTRUCTION }]
+          }
+        };
+
+        try {
+          const response = await fetchWithRetry(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          const result = await response.json();
+          const candidate = result.candidates?.[0];
+
+          if (candidate && candidate.content?.parts?.[0]?.text) {
+            let rawText = candidate.content.parts[0].text.trim();
+            
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              rawText = jsonMatch[0];
+            }
+
+            const parsedData = JSON.parse(rawText);
+            setH2hData(parsedData);
+
+            const groundingMetadata = candidate.groundingMetadata;
+            if (groundingMetadata && groundingMetadata.groundingAttributions) {
+              const extractedSources = groundingMetadata.groundingAttributions
+                .map(attr => ({
+                  uri: attr.web?.uri,
+                  title: attr.web?.title,
+                }))
+                .filter(source => source.uri && source.title);
+              setSources(extractedSources);
+            }
+          } else {
+            throw new Error("Nepravilan ili prazan odgovor od AI modela.");
+          }
+        } catch (err) {
+          console.error(err);
+          setError(
+            language === "SRB" 
+              ? `Greška pri pretrazi: ${err.message}. Proverite da li je vaš API ključ ispravno unet i da li ste ga sačuvali.`
+              : `Search error: ${err.message}. Please check if your API key is correctly entered and saved.`
+          );
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleQuickMatchClick = (m) => {
+        setTeamA(m.teamA);
+        setTeamB(m.teamB);
+        fetchH2HAnalysis(m.teamA, m.teamB);
+      };
+
+      return (
+        <div className="min-h-screen p-4 md:p-8">
+          
+          {/* HEADER */}
+          <header className="max-w-6xl mx-auto mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-900 pb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="bg-emerald-500 text-slate-950 font-black text-xs px-2 py-1 rounded">PRO</span>
+                <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                  H2H TRADITION ANALYZER
+                </h1>
               </div>
-              <div class="text-center">
-                <div class="text-3xl font-bold">${g.home ?? '-'} : ${g.away ?? '-'}</div>
-                <div class="text-xs text-slate-500">${m.fixture.status.long}</div>
+              <p className="text-xs md:text-sm text-slate-400">
+                {language === "SRB" 
+                  ? "Pametna AI pretraga, analize poluvremena, prelaza i statistike" 
+                  : "Smart AI Search, Halftime/Draw stats, Transitions & H2H trends"}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {showInstallBtn && (
+                <button 
+                  onClick={handleInstallApp}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors animate-bounce"
+                >
+                  📲 {language === "SRB" ? "Instaliraj kao App" : "Install App"}
+                </button>
+              )}
+
+              <button 
+                onClick={() => setLanguage(l => l === "SRB" ? "ENG" : "SRB")}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors"
+              >
+                🌐 {language === "SRB" ? "Srpski (SRB)" : "English (ENG)"}
+              </button>
+
+              <button
+                onClick={() => setShowApiSettings(!showApiSettings)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${showApiSettings ? 'bg-emerald-500 text-slate-950 border-emerald-400' : 'bg-slate-900 border-slate-800 hover:border-slate-700'}`}
+              >
+                ⚙️ {language === "SRB" ? "API Podešavanja" : "API Settings"}
+              </button>
+            </div>
+          </header>
+
+          {/* API ACCORDION */}
+          {showApiSettings && (
+            <div className="max-w-6xl mx-auto mb-8 p-5 bg-slate-900 rounded-xl border border-slate-800 text-sm transition-all duration-300">
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="font-bold text-emerald-400">
+                  {language === "SRB" ? "Podešavanje Gemini API ključa" : "Gemini API Key Setup"}
+                </h3>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">
+                  Lokalna memorija
+                </span>
               </div>
-              <div class="flex-1 flex items-center gap-3 justify-end">
-                <span class="font-medium">${a.name}</span>
-                <img src="${a.logo}" class="w-9 h-9 rounded-full" onerror="this.src='https://via.placeholder.com/36?text=⚽'">
+              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                {language === "SRB" 
+                  ? "Za pokretanje pretrage potreban ti je sopstveni besplatni API ključ. Možeš ga kreirati za 1 minut na sajtu "
+                  : "To run live searches, you need a personal API key. You can create one for free in 1 minute at "}
+                <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold hover:text-emerald-300">
+                  Google AI Studio
+                </a>.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-3 items-center">
+                <div className="relative flex-1 w-full">
+                  <input 
+                    type="password"
+                    placeholder="Nalepi svoj AIzaSy... ključ ovde"
+                    value={inputApiKey}
+                    onChange={(e) => setInputApiKey(e.target.value)}
+                    className="w-full bg-slate-950 text-slate-100 border border-slate-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                  {activeApiKey && (
+                    <span className="absolute right-3 top-2.5 text-xs text-emerald-400 font-bold">✓ Sačuvan</span>
+                  )}
+                </div>
+
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button 
+                    onClick={handleSaveKey}
+                    className="flex-1 sm:flex-initial px-4 py-2 bg-emerald-500 text-slate-950 hover:bg-emerald-400 rounded-lg text-xs font-bold transition-all whitespace-nowrap"
+                  >
+                    {language === "SRB" ? "Sačuvaj ključ" : "Save Key"}
+                  </button>
+                  {activeApiKey && (
+                    <button 
+                      onClick={handleRemoveKey}
+                      className="px-4 py-2 bg-rose-950/60 text-rose-300 border border-rose-900 hover:bg-rose-900 rounded-lg text-xs font-bold transition-all"
+                    >
+                      {language === "SRB" ? "Ukloni" : "Remove"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {saveStatus && (
+                <div className="mt-3 text-xs font-bold text-emerald-400 animate-pulse">
+                  {saveStatus}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MAIN GRID */}
+          <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* INPUT SIDE */}
+            <div className="lg:col-span-4 flex flex-col gap-6">
+              
+              <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  🔍 {language === "SRB" ? "Pokreni Novu Analizu" : "Start New Analysis"}
+                </h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                      {language === "SRB" ? "Domaćin (Tim A)" : "Home Team (Team A)"}
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="npr. Crvena Zvezda, Real Madrid..."
+                      value={teamA}
+                      onChange={(e) => setTeamA(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 font-semibold"
+                    />
+                  </div>
+
+                  <div className="flex justify-center -my-2">
+                    <button 
+                      onClick={() => {
+                        const temp = teamA;
+                        setTeamA(teamB);
+                        setTeamB(temp);
+                      }}
+                      className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs"
+                    >
+                      🔄
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                      {language === "SRB" ? "Gost (Tim B)" : "Away Team (Team B)"}
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="npr. Partizan, Barcelona..."
+                      value={teamB}
+                      onChange={(e) => setTeamB(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 font-semibold"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => fetchH2HAnalysis()}
+                    disabled={loading}
+                    className="w-full py-3 rounded-xl font-bold text-sm text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-500 hover:from-emerald-300 hover:to-cyan-400 transition-all shadow-lg flex justify-center items-center gap-2 disabled:bg-slate-800 disabled:text-slate-500"
+                  >
+                    {loading ? "Analiziram..." : `⚽ ${language === "SRB" ? "Izvuci H2H Tradicije" : "Extract H2H Trends"}`}
+                  </button>
+                </div>
+              </div>
+
+              {/* POPULAR MATCHES */}
+              <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-3">
+                  🔥 {language === "SRB" ? "Popularni Derbiji" : "Popular Derbies"}
+                </h3>
+                <div className="grid grid-cols-1 gap-2">
+                  {POPULAR_MATCHES.map((m, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleQuickMatchClick(m)}
+                      disabled={loading}
+                      className="p-3 text-left bg-slate-950 hover:bg-slate-800 border border-slate-900 hover:border-slate-700 rounded-xl transition-all flex flex-col gap-1"
+                    >
+                      <span className="text-xs font-semibold text-slate-300">
+                        {m.teamA} vs {m.teamB}
+                      </span>
+                      <span className="text-[10px] text-slate-500">{m.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <div class="text-center text-xs text-slate-400 mt-3">${m.league.name}</div>
-          </div>`;
-      });
 
-      content.innerHTML = html || `<p class="text-center py-10 text-slate-400">Nema utakmica danas.</p>`;
-    }
+            {/* RESULTS SIDE */}
+            <div className="lg:col-span-8">
+              
+              {error && (
+                <div className="p-4 mb-6 bg-rose-950/40 border border-rose-800 text-rose-200 rounded-xl">
+                  <p className="text-xs font-mono">{error}</p>
+                </div>
+              )}
 
-    // STREAKS - poboljšano
-    async function loadStreaks() {
-      const content = document.getElementById('content');
-      content.innerHTML = `<p class="text-center py-12">Tražim nizove preko više liga...</p>`;
+              {loading && (
+                <div className="p-12 bg-slate-900 rounded-2xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[450px]">
+                  <div className="w-16 h-16 rounded-full border-4 border-slate-800 border-t-emerald-500 animate-spin mb-4"></div>
+                  <h3 className="text-lg font-bold text-slate-200 mb-1">
+                    {language === "SRB" ? "Sastavljam Izveštaj..." : "Generating Report..."}
+                  </h3>
+                  <p className="text-xs text-emerald-400 animate-pulse">
+                    {loadingMessages[language][loadingStep]}
+                  </p>
+                </div>
+              )}
 
-      // Više liga + trenutna sezona
-      const leagues = [39,140,135,78,61,88,40,41,42,43,44,45]; 
-      let html = `<h2 class="text-xl font-bold mb-4">🔥 Timovi sa nizovima Over 2.5</h2>`;
+              {!loading && !h2hData && (
+                <div className="p-12 bg-slate-900/60 rounded-2xl border border-slate-800 border-dashed text-center flex flex-col items-center justify-center min-h-[450px]">
+                  <span className="text-4xl mb-3">📈</span>
+                  <h3 className="text-lg font-bold text-slate-300 mb-1">
+                    {language === "SRB" ? "Spremni za analizu?" : "Ready for H2H Trends?"}
+                  </h3>
+                  <p className="text-xs text-slate-500 max-w-sm font-medium">
+                    {language === "SRB" 
+                      ? "Sačuvajte API ključ gore, unesite timove sa leve strane ili izaberite derbi za instant pretragu tradicija poluvremena i prelaza."
+                      : "Save your API key above, then enter teams or select a popular derby to find halftime and transition stats."}
+                  </p>
+                </div>
+              )}
 
-      for (let league of leagues) {
-        const data = await apiGet(`/fixtures?league=${league}&season=2025&last=12`);
-        
-        const stats = {};
-        data.forEach(f => {
-          const home = f.teams.home.name;
-          const away = f.teams.away.name;
-          const total = (f.goals.home||0) + (f.goals.away||0);
+              {!loading && h2hData && (
+                <div className="space-y-6">
+                  
+                  {/* HERO SCOREBOARD */}
+                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl">
+                    <div className="flex justify-between items-center mb-6 border-b border-slate-800/60 pb-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                      <span>🏆 HEAD-TO-HEAD</span>
+                      <span>Real-time Data</span>
+                    </div>
 
-          [home, away].forEach(team => {
-            if (!stats[team]) stats[team] = {streak:0, max:0};
-            if (total >= 3) {
-              stats[team].streak++;
-              stats[team].max = Math.max(stats[team].max, stats[team].streak);
-            } else {
-              stats[team].streak = 0;
-            }
-          });
-        });
+                    <div className="flex justify-around items-center gap-4 py-2">
+                      <div className="text-center flex-1">
+                        <div className="w-12 h-12 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center text-lg font-black text-emerald-400 mx-auto mb-2">
+                          {h2hData.teamA ? h2hData.teamA.charAt(0) : "A"}
+                        </div>
+                        <h3 className="text-sm font-bold">{h2hData.teamA}</h3>
+                      </div>
 
-        Object.entries(stats)
-          .filter(([_,s]) => s.max >= 3)
-          .sort((a,b) => b[1].max - a[1].max)
-          .forEach(([team, s]) => {
-            html += `
-              <div class="card streak rounded-2xl p-5 mb-3">
-                <div class="font-bold text-lg">${team}</div>
-                <div class="text-xl">${s.max} utakmica zaredom OVER 2.5 🔥</div>
-              </div>`;
-          });
-      }
+                      <div className="text-center">
+                        <div className="text-xl font-black text-emerald-500">{h2hData.overallH2H?.totalMatches || 0}</div>
+                        <span className="text-[9px] uppercase font-bold text-slate-500">Mečeva</span>
+                      </div>
 
-      content.innerHTML = html || `<p class="text-center py-10 text-slate-400">Trenutno nema jakih nizova (free plan ograničenje).</p>`;
-    }
+                      <div className="text-center flex-1">
+                        <div className="w-12 h-12 rounded-full bg-slate-950 border border-slate-800 flex items-center justify-center text-lg font-black text-cyan-400 mx-auto mb-2">
+                          {h2hData.teamB ? h2hData.teamB.charAt(0) : "B"}
+                        </div>
+                        <h3 className="text-sm font-bold">{h2hData.teamB}</h3>
+                      </div>
+                    </div>
 
-    async function loadH2H() {
-      const content = document.getElementById('content');
-      content.innerHTML = `
-        <h2 class="text-xl font-bold mb-4">H2H Međusobni dueli</h2>
-        <div class="bg-slate-900 rounded-2xl p-6 space-y-4">
-          <input id="t1" placeholder="Prvi tim" value="Crvena Zvezda" class="w-full bg-slate-800 p-4 rounded-xl">
-          <input id="t2" placeholder="Drugi tim" value="Partizan" class="w-full bg-slate-800 p-4 rounded-xl">
-          <button onclick="searchH2H()" class="w-full bg-green-600 py-4 rounded-xl font-bold">TRAŽI H2H</button>
+                    <div className="mt-6 p-4 bg-slate-950/60 rounded-xl flex justify-around text-center text-[11px] font-semibold text-slate-400">
+                      <div>
+                        Pobede {h2hData.teamA}: <span className="text-emerald-400 font-bold">{h2hData.overallH2H?.teamAWins || 0}</span>
+                      </div>
+                      <div className="border-l border-slate-800 px-4">
+                        Nerešeno: <span className="text-slate-300 font-bold">{h2hData.overallH2H?.draws || 0}</span>
+                      </div>
+                      <div className="border-l border-slate-800 px-4">
+                        Pobede {h2hData.teamB}: <span className="text-cyan-400 font-bold">{h2hData.overallH2H?.teamBWins || 0}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* HALFTIME DRAW STATS (DODATAK) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-4">
+                        ⏳ {language === "SRB" ? "ANALIZA POLUVREMENA (HT)" : "HALFTIME DRAW ANALYTICS"}
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">{language === "SRB" ? "Nerešeno na poluvremenu (X pp)" : "HT Draw percentage"}</span>
+                          <span className="font-bold text-slate-100 bg-slate-950 px-2 py-1 rounded border border-slate-800">
+                            {h2hData.halftimeStats?.drawPercentage || 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">{language === "SRB" ? "Vodi domaćin na poluvremenu" : "Home lead at HT"}</span>
+                          <span className="font-bold text-emerald-400">
+                            {h2hData.halftimeStats?.teamALeadPercentage || 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">{language === "SRB" ? "Vodi gost na poluvremenu" : "Away lead at HT"}</span>
+                          <span className="font-bold text-cyan-400">
+                            {h2hData.halftimeStats?.teamBLeadPercentage || 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-800/60">
+                          <span className="text-slate-400">{language === "SRB" ? "Prosečno golova u I poluvremenu" : "Avg. Goals 1st Half"}</span>
+                          <span className="font-bold text-slate-100">
+                            {h2hData.halftimeStats?.avgGoalsFirstHalf || 0} golova
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* TRANSITIONS & PRELAZI (DODATAK) */}
+                    <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-400 mb-4">
+                        🔁 {language === "SRB" ? "STATISTIKA PRELAZA (HT/FT)" : "HT/FT TRANSITION STATS"}
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">{language === "SRB" ? "Najčešći prelaz u susretima" : "Most common transition"}</span>
+                          <span className="font-bold text-emerald-400 bg-emerald-950/40 px-2 py-1 rounded border border-emerald-900/60">
+                            {h2hData.transitionsStats?.mostCommonTransition || "X-1"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">{language === "SRB" ? "Učestalost tog prelaza" : "Transition rate"}</span>
+                          <span className="font-bold text-slate-100">
+                            {h2hData.transitionsStats?.transitionPercentage || 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-slate-400">{language === "SRB" ? "Šansa za preokret (iz 1 u 2, ili 2 u 1)" : "Turnaround / Comeback chance"}</span>
+                          <span className="font-bold text-amber-500">
+                            {h2hData.transitionsStats?.turnaroundChance || 0}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TRADITIONS */}
+                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                    <h3 className="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
+                      🔥 {language === "SRB" ? "ISTAKNUTE TRADICIJE" : "SPECIAL TRENDS & TRADITIONS"}
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {h2hData.traditions && h2hData.traditions.map((trad, idx) => (
+                        <div key={idx} className="p-4 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center gap-4">
+                          <div className="flex-1">
+                            <span className="inline-block px-1.5 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-900 rounded text-[9px] font-bold uppercase mb-2">
+                              {trad.title}
+                            </span>
+                            <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                              {trad.description}
+                            </p>
+                          </div>
+                          
+                          <div className="text-center">
+                            <span className="block text-base font-black text-emerald-400">{trad.probability}%</span>
+                            <span className="text-[8px] text-slate-500 uppercase font-bold">Šansa</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* PREDICTOR BAR */}
+                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                    <h3 className="text-sm font-bold mb-4">🔮 {language === "SRB" ? "AI PROGNOZA ISHODA" : "AI PROBABILITY FORECAST"}</h3>
+                    <div className="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden flex mb-4">
+                      <div className="bg-emerald-500 h-full" style={{ width: `${h2hData.predictedOutcome?.homeWinProb || 33}%` }}></div>
+                      <div className="bg-slate-500 h-full" style={{ width: `${h2hData.predictedOutcome?.drawProb || 34}%` }}></div>
+                      <div className="bg-cyan-500 h-full" style={{ width: `${h2hData.predictedOutcome?.awayWinProb || 33}%` }}></div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 text-center text-xs font-bold pt-1 mb-6">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">{h2hData.teamA}</span>
+                        <span className="text-emerald-500 text-sm">{h2hData.predictedOutcome?.homeWinProb}%</span>
+                      </div>
+                      <div className="border-x border-slate-800">
+                        <span className="text-slate-400 text-[10px] block">Nerešeno</span>
+                        <span className="text-slate-300 text-sm">{h2hData.predictedOutcome?.drawProb}%</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">{h2hData.teamB}</span>
+                        <span className="text-cyan-500 text-sm">{h2hData.predictedOutcome?.awayWinProb}%</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-950 rounded-xl border border-slate-800/60 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">{language === "SRB" ? "Predviđeno na poluvremenu (HT):" : "Predicted Halftime (HT):"}</span>
+                        <span className="font-extrabold text-slate-200 bg-slate-900 px-2 py-1 rounded">
+                          {h2hData.predictedOutcome?.predictedHT || "X"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-t sm:border-t-0 sm:border-l border-slate-800/80 pt-2 sm:pt-0 sm:pl-4">
+                        <span className="text-slate-400">{language === "SRB" ? "Predviđen prelaz (HT/FT):" : "Predicted HT/FT transition:"}</span>
+                        <span className="font-extrabold text-emerald-400 bg-emerald-950/40 border border-emerald-900/60 px-2 py-1 rounded">
+                          {h2hData.predictedOutcome?.predictedFTTransition || "X-1"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TACTICAL ANALYSIS */}
+                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                    <h3 className="text-sm font-bold text-emerald-400 mb-3">🧠 AI ANALITIČKI IZVEŠTAJ</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{h2hData.aiAnalysis}</p>
+                  </div>
+
+                  {/* RECENT MATCHES DETAILED LIST */}
+                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                    <h3 className="text-sm font-bold text-slate-200 mb-4">📅 POSLEDNJI MEĐUSOBNI MEČEVI (H2H)</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
+                            <th className="py-2.5">Datum</th>
+                            <th className="py-2.5">Takmičenje</th>
+                            <th className="py-2.5 text-right">Domaćin</th>
+                            <th className="py-2.5 text-center">Rezultat (Pol.)</th>
+                            <th className="py-2.5">Gost</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {h2hData.recentMatches && h2hData.recentMatches.map((m, idx) => (
+                            <tr key={idx} className="border-b border-slate-900/80 hover:bg-slate-950/40 transition-colors">
+                              <td className="py-3 font-mono text-slate-400">{m.date}</td>
+                              <td className="py-3 text-slate-400">{m.competition}</td>
+                              <td className="py-3 text-right font-semibold">{m.homeTeam}</td>
+                              <td className="py-3 text-center">
+                                <span className="inline-block bg-slate-950 px-2 py-1 rounded border border-slate-800 font-bold text-emerald-400">
+                                  {m.homeScore} - {m.awayScore}
+                                </span>
+                                <span className="block text-[10px] text-slate-500 mt-1">({m.halfTimeScore || "X"})</span>
+                              </td>
+                              <td className="py-3 font-semibold">{m.awayTeam}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* SOURCES */}
+                  {sources.length > 0 && (
+                    <div className="p-4 bg-slate-950 border border-slate-900 rounded-xl text-[10px]">
+                      <span className="text-slate-500 block mb-2 font-bold uppercase">🔗 Izguglani izvori podataka:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {sources.map((src, i) => (
+                          <a key={i} href={src.uri} target="_blank" rel="noreferrer" className="bg-slate-900 border border-slate-800 px-2 py-1 rounded text-slate-300 hover:text-emerald-400">
+                            {src.title || "Izvor"}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
+            </div>
+          </main>
         </div>
-        <div id="h2hres" class="mt-6"></div>
-      `;
+      );
     }
 
-    async function searchH2H() {
-      const t1 = document.getElementById('t1').value;
-      const t2 = document.getElementById('t2').value;
-      const res = document.getElementById('h2hres');
-      res.innerHTML = `<p>Pretražujem...</p>`;
-
-      const data = await apiGet(`/fixtures/headtohead?h2h=${t1}-${t2}`);
-      let html = `<h3 class="mb-3">${t1} vs ${t2}</h3>`;
-      data.slice(0,8).forEach(m => {
-        html += `<div class="bg-slate-900 p-4 rounded-2xl mb-3">
-          <small>${m.league.name}</small><br>
-          ${m.teams.home.name} ${m.goals.home} - ${m.goals.away} ${m.teams.away.name}
-        </div>`;
-      });
-      res.innerHTML = html;
-    }
-
-    window.onload = () => showTab(0);
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<H2HAnalyzer />);
   </script>
 </body>
 </html>
